@@ -1,0 +1,7 @@
+#!/bin/bash
+ARCHITECTURE=$(uname -m)
+DEBIAN_VERSION=$(cat /etc/debian_version)
+OS_VERSION=`echo $DEBIAN_VERSION | cut -d "." -f -1`
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NO_COLOR='\033[0m'
