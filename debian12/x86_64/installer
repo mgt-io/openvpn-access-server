@@ -5,16 +5,19 @@ OS_VERSION=`echo $DEBIAN_VERSION | cut -d "." -f -1`
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NO_COLOR='\033[0m'
-
+IP=$(curl http://checkip.amazonaws.com)
 
 baseSetup()
 {
   apt update
-  apt -y upgrade
+  apt clean
+  apt -y upgrade --allow-downgrades
+  apt -y autoremove
   wget -O - https://as-repository.openvpn.net/as-repo-public.asc | sudo apt-key add -
   echo "deb http://as-repository.openvpn.net/as/debian bookworm main" | sudo tee /etc/apt/sources.list.d/openvpn-as-repo.list
   apt update
-  apt -y  install openvpn-as
+  apt -y install python3-service-identity openvpn-as
+  /usr/local/openvpn_as/scripts/sacli --key "host.name" --value "$IP" Configput
 }
 
 baseSetup
