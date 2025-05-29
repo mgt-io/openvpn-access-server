@@ -1,23 +1,70 @@
 #!/bin/bash
-ARCHITECTURE=$(uname -m)
-DEBIAN_VERSION=$(cat /etc/debian_version)
-OS_VERSION=`echo $DEBIAN_VERSION | cut -d "." -f -1`
+set -e
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NO_COLOR='\033[0m'
-IP=$(curl http://checkip.amazonaws.com)
 
-baseSetup()
-{
-  apt update
-  apt clean
-  apt -y upgrade --allow-downgrades
-  apt -y autoremove
-  wget -O - https://as-repository.openvpn.net/as-repo-public.asc | sudo apt-key add -
-  echo "deb http://as-repository.openvpn.net/as/debian bookworm main" | sudo tee /etc/apt/sources.list.d/openvpn-as-repo.list
-  apt update
-  apt -y install python3-service-identity openvpn-as
-  /usr/local/openvpn_as/scripts/sacli --key "host.name" --value "$IP" Configput
-}
+if [[ $EUID -ne 0 ]]; then
+  echo -e "${RED}This script must be run as root${NO_COLOR}" >&2
+  exit 1
+fi
 
-baseSetup
+if [[ ! -f /etc/debian_version ]]; then
+  echo -e "${RED}This script requires a Debian-based system${NO_COLOR}" >&2
+  exit 1
+fi
+
+# Verify Debian 12 (bookworm)
+DEBIAN_CODENAME=$(lsb_release -sc 2>/dev/null || echo "")
+if [[ "$DEBIAN_CODENAME" != "bookworm" ]]; then
+  DEBIAN_VERSION=$(cat /etc/debian_version 2>/dev/null || echo "")
+  if [[ ! "$DEBIAN_VERSION" =~ ^12\..* ]]; then
+    echo -e "${RED}This script requires Debian 12 (bookworm). Detected version: $DEBIAN_VERSION or codename: $DEBIAN_CODENAME${NO_COLOR}" >&2
+    exit 1
+  fi
+fi
+
+echo -e "${GREEN}Please enter the hostname for this server (e.g., vpn.example.com):${NO_COLOR}"
+read -r HOSTNAME
+
+if [[ -z "$HOSTNAME" || ! "$HOSTNAME" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+  echo -e "${RED}Invalid hostname. It must be non-empty and contain only letters, numbers, dots, or hyphens${NO_COLOR}" >&2
+  exit 1
+fi
+
+IP=$(curl -s --connect-timeout 5 http://checkip.amazonaws.com)
+if [[ -z "$IP" ]]; then
+  echo -e "${RED}Failed to retrieve public IP${NO_COLOR}" >&2
+  exit 1
+fi
+
+if ! grep -q "$HOSTNAME" /etc/hosts; then
+  echo -e "${GREEN}Adding $HOSTNAME to /etc/hosts...${NO_COLOR}"
+  echo "$IP $HOSTNAME" >> /etc/hosts
+else
+  echo -e "${GREEN}Hostname $HOSTNAME already exists in /etc/hosts, updating...${NO_COLOR}"
+  sed -i "/$HOSTNAME/d" /etc/hosts
+  echo "$IP $HOSTNAME" >> /etc/hosts
+fi
+
+echo -e "${GREEN}Updating system packages...${NO_COLOR}"
+apt update
+apt clean
+apt -y upgrade --allow-downgrades
+apt -y autoremove
+echo -e "${GREEN}Adding OpenVPN Access Server repository...${NO_COLOR}"
+wget -qO - https://as-repository.openvpn.net/as-repo-public.asc | apt-key add -
+echo "deb http://as-repository.openvpn.net/as/debian bookworm main" > /etc/apt/sources.list.d/openvpn-as-repo.list
+echo -e "${GREEN}Installing OpenVPN Access Server...${NO_COLOR}"
+apt update
+apt -y install python3-service-identity openvpn-as
+cho -e "${GREEN}Configuring OpenVPN Access Server...${NO_COLOR}"
+/usr/local/openvpn_as/scripts/sacli --key "host.name" --value "$IP" Configput
+/usr/local/openvpn_as/scripts/sacli --key "vpn.daemon.0.listen.port" --value "1194" Configput
+/usr/local/openvpn_as/scripts/sacli --key "vpn.daemon.0.listen.protocol" --value "udp" Configput
+/usr/local/openvpn_as/scripts/sacli --key "vpn.server.daemon.enable" --value "false" Configput
+/usr/local/openvpn_as/scripts/sacli --key "vpn.server.port_share.enable" --value "false" Configput
+/usr/local/openvpn_as/scripts/sacli --key "vpn.server.daemon.protocols" --value "udp" Configput
+echo -e "${GREEN}Restarting OpenVPN Access Server...${NO_COLOR}"
+systemctl restart openvpnas
