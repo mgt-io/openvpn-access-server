@@ -25,7 +25,7 @@ if [[ "$DEBIAN_CODENAME" != "bookworm" ]]; then
   fi
 fi
 
-echo -e "${GREEN}Please enter the hostname for this server (e.g., vpn.example.com):${NO_COLOR}"
+echo -e "${GREEN}Please enter the hostname for this server (e.g., project-name-openvpn):${NO_COLOR}"
 read -r HOSTNAME
 
 if [[ -z "$HOSTNAME" || ! "$HOSTNAME" =~ ^[a-zA-Z0-9.-]+$ ]]; then
@@ -50,16 +50,18 @@ fi
 
 echo -e "${GREEN}Updating system packages...${NO_COLOR}"
 apt update
-apt clean
-apt -y upgrade --allow-downgrades
+mkdir /home/.tmp/
+apt -o Dir::Cache=/home/.tmp/ -y upgrade --allow-downgrades
+rm -rf /home/.tmp/
 apt -y autoremove
+apt clean
 echo -e "${GREEN}Adding OpenVPN Access Server repository...${NO_COLOR}"
 wget -qO - https://as-repository.openvpn.net/as-repo-public.asc | apt-key add -
 echo "deb http://as-repository.openvpn.net/as/debian bookworm main" > /etc/apt/sources.list.d/openvpn-as-repo.list
 echo -e "${GREEN}Installing OpenVPN Access Server...${NO_COLOR}"
 apt update
 apt -y install python3-service-identity openvpn-as
-cho -e "${GREEN}Configuring OpenVPN Access Server...${NO_COLOR}"
+echo -e "${GREEN}Configuring OpenVPN Access Server...${NO_COLOR}"
 /usr/local/openvpn_as/scripts/sacli --key "host.name" --value "$IP" Configput
 /usr/local/openvpn_as/scripts/sacli --key "vpn.daemon.0.listen.port" --value "1194" Configput
 /usr/local/openvpn_as/scripts/sacli --key "vpn.daemon.0.listen.protocol" --value "udp" Configput
